@@ -2,11 +2,16 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug iOS",
+      "name": "Attach to iOS Device",
       "type": "coreclr",
-      "request": "launch",
-      "preLaunchTask": "build", // Matches the "label" in tasks.json
-      "console": "internalConsole"
+      "request": "attach",
+      "processId": "HSLocationManager",
+      "pipeTransport": {
+        "pipeProgram": "/bin/bash",
+        "pipeArgs": [ "-c" ],
+        "debuggerPath": "/usr/local/share/dotnet/xvsdbg",
+        "pipeCwd": "${workspaceFolder}"
+      }
     }
   ]
 }

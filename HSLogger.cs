@@ -59,16 +59,12 @@ public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
     {
 #pragma warning disable CA1416 // Validate platform compatibility
         var url = NSUrl.FromFilename(CurrentPath);
-#pragma warning restore CA1416 // Validate platform compatibility
-#pragma warning disable CA1416 // Validate platform compatibility
         var docController = new UIDocumentInteractionController
         {
             Url = url,
             Uti = "public.comma-separated-values-text",
             Delegate = this
         };
-#pragma warning restore CA1416 // Validate platform compatibility
-#pragma warning disable CA1416 // Validate platform compatibility
         docController.PresentPreview(true);
 #pragma warning restore CA1416 // Validate platform compatibility
     }
@@ -116,9 +112,7 @@ public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
         var windowScene = UIApplication.SharedApplication.ConnectedScenes
             .OfType<UIWindowScene>()
             .FirstOrDefault();
-#pragma warning restore CA1416 // Validate platform compatibility
 
-#pragma warning disable CA1416 // Validate platform compatibility
         return windowScene?.Windows.FirstOrDefault(static w => w.IsKeyWindow)?.RootViewController;
 #pragma warning restore CA1416 // Validate platform compatibility
     }
