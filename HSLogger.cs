@@ -2,11 +2,14 @@ namespace HSLocationManager;
 
 using System;
 using System.IO;
+using System.Linq;
 using Foundation;
 using UIKit;
 
 public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
 {
+    #region Properties
+    
     public ulong MaxFileSize { get; set; } = 2048;
     public int MaxFileCount { get; set; } = 8;
     public string Name { get; set; } = "logfile";
@@ -16,159 +19,218 @@ public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
     public static HSLogger Logger => _instance.Value;
 
     private string _directory = DefaultDirectory();
-
+    private readonly NSDateFormatter _dateFormatter;
+    
     public string Directory
     {
         get => _directory;
         set
         {
             _directory = Path.GetFullPath(value);
-            if (!System.IO.Directory.Exists(_directory))
-            {
-                try
-                {
-                    System.IO.Directory.CreateDirectory(_directory);
-                }
-                catch
-                {
-                    Console.WriteLine($"Couldn't create directory at {_directory}");
-                }
-            }
+            EnsureDirectoryExists(_directory);
         }
     }
 
-    public string CurrentPath => Path.Combine(Directory, LogName(0));
+    public string CurrentPath => Path.Combine(Directory, GetLogName(0));
+    
+    #endregion
 
-    private NSDateFormatter DateFormatter
+    #region Constructor
+    
+    private HSLogger()
     {
-        get
+#pragma warning disable CA1416 // Validate platform compatibility
+        _dateFormatter = new NSDateFormatter
         {
-            var formatter = new NSDateFormatter
-            {
-                TimeStyle = NSDateFormatterStyle.Medium,
-                DateStyle = NSDateFormatterStyle.Medium
-            };
-            return formatter;
-        }
+            TimeStyle = NSDateFormatterStyle.Medium,
+            DateStyle = NSDateFormatterStyle.Medium
+        };
+#pragma warning restore CA1416 // Validate platform compatibility
     }
+    
+    #endregion
 
+    #region Public Methods
+    
+    /// <summary>
+    /// Exports the current log file using iOS document interaction controller
+    /// </summary>
     public void ExportLogFile()
     {
+#pragma warning disable CA1416 // Validate platform compatibility
         var url = NSUrl.FromFilename(CurrentPath);
+#pragma warning restore CA1416 // Validate platform compatibility
+#pragma warning disable CA1416 // Validate platform compatibility
         var docController = new UIDocumentInteractionController
         {
             Url = url,
             Uti = "public.comma-separated-values-text",
             Delegate = this
         };
+#pragma warning restore CA1416 // Validate platform compatibility
+#pragma warning disable CA1416 // Validate platform compatibility
         docController.PresentPreview(true);
+#pragma warning restore CA1416 // Validate platform compatibility
     }
 
-    public UIViewController? DocumentInteractionControllerViewControllerForPreview(UIDocumentInteractionController controller)
+    /// <summary>
+    /// Writes a log entry to the current log file
+    /// </summary>
+    /// <param name="text">The log message to write</param>
+    public void Write(string text)
     {
-#pragma warning disable CA1416 // Valider la compatibilité de la plateforme
+        try
+        {
+            EnsureLogFileExists();
+            
+            using var fileStream = new FileStream(CurrentPath, FileMode.Append, FileAccess.Write);
+            using var writer = new StreamWriter(fileStream);
+
+#pragma warning disable CA1416 // Validate platform compatibility
+            var dateStr = _dateFormatter.ToString(NSDate.Now);
+#pragma warning restore CA1416 // Validate platform compatibility
+            var logEntry = $"[{dateStr}]: {text}\n";
+            
+            writer.Write(logEntry);
+
+            if (PrintToConsole)
+            {
+                Console.Write(logEntry);
+            }
+
+            ManageLogFiles();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error writing to log: {ex.Message}");
+        }
+    }
+    
+    #endregion
+
+    #region IUIDocumentInteractionControllerDelegate Implementation
+    
+    public static UIViewController? DocumentInteractionControllerViewControllerForPreview(UIDocumentInteractionController controller)
+    {
+#pragma warning disable CA1416 // Validate platform compatibility
         var windowScene = UIApplication.SharedApplication.ConnectedScenes
             .OfType<UIWindowScene>()
             .FirstOrDefault();
-#pragma warning restore CA1416 // Valider la compatibilité de la plateforme
+#pragma warning restore CA1416 // Validate platform compatibility
 
-#pragma warning disable CA1416 // Valider la compatibilité de la plateforme
-        return windowScene?.Windows.FirstOrDefault(w => w.IsKeyWindow)?.RootViewController;
-#pragma warning restore CA1416 // Valider la compatibilité de la plateforme
+#pragma warning disable CA1416 // Validate platform compatibility
+        return windowScene?.Windows.FirstOrDefault(static w => w.IsKeyWindow)?.RootViewController;
+#pragma warning restore CA1416 // Validate platform compatibility
     }
+    
+    #endregion
 
-
-    public void Write(string text)
+    #region Private Methods
+    
+    private void EnsureLogFileExists()
     {
-        var path = CurrentPath;
-        if (!File.Exists(path))
+        if (!File.Exists(CurrentPath))
         {
             try
             {
-                File.WriteAllText(path, "");
+                File.WriteAllText(CurrentPath, string.Empty);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to create log file: {ex.Message}");
+            }
         }
-
-        using var fileHandle = new FileStream(path, FileMode.Append, FileAccess.Write);
-        var dateStr = DateFormatter.ToString(NSDate.Now);
-        var writeText = $"[{dateStr}]: {text}\n";
-        using var writer = new StreamWriter(fileHandle);
-        writer.Write(writeText);
-
-        if (PrintToConsole)
-        {
-            Console.Write(writeText);
-        }
-
-        Cleanup();
     }
 
-    private void Cleanup()
+    private void ManageLogFiles()
     {
-        var path = Path.Combine(Directory, LogName(0));
-        var size = FileSize(path);
+        var currentSize = GetFileSize(CurrentPath);
         var maxSize = MaxFileSize * 1024;
 
-        if (size > 0 && size >= (long)maxSize && maxSize > 0 && MaxFileCount > 0)
+        if (currentSize > 0 && currentSize >= (long)maxSize && maxSize > 0 && MaxFileCount > 0)
         {
-            Rename(0);
-            var deletePath = Path.Combine(Directory, LogName(MaxFileCount));
-            try
+            RotateLogFiles();
+        }
+    }
+
+    private void RotateLogFiles()
+    {
+        // Start rotation with the oldest file first
+        var deletePath = Path.Combine(Directory, GetLogName(MaxFileCount));
+        try
+        {
+            if (File.Exists(deletePath))
             {
                 File.Delete(deletePath);
             }
-            catch { }
+            
+            // Rotate files from highest index to lowest
+            for (int i = MaxFileCount - 1; i >= 0; i--)
+            {
+                var currentFile = Path.Combine(Directory, GetLogName(i));
+                var nextFile = Path.Combine(Directory, GetLogName(i + 1));
+                
+                if (File.Exists(currentFile))
+                {
+                    File.Move(currentFile, nextFile, true);
+                }
+            }
+            
+            // Create a new empty log file
+            File.WriteAllText(CurrentPath, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error rotating log files: {ex.Message}");
         }
     }
 
-    private static long FileSize(string path)
+    private static long GetFileSize(string path)
     {
         return File.Exists(path) ? new FileInfo(path).Length : 0;
     }
 
-    private void Rename(int index)
+    private string GetLogName(int num) => $"{Name}-{num}.log";
+
+    private static void EnsureDirectoryExists(string path)
     {
-        var path = Path.Combine(Directory, LogName(index));
-        var newPath = Path.Combine(Directory, LogName(index + 1));
-
-        if (File.Exists(newPath))
-        {
-            Rename(index + 1);
-        }
-
-        try
-        {
-            File.Move(path, newPath);
-        }
-        catch { }
-    }
-
-    private static string LogName(int num) => $"logfile-{num}.log";
-
-    private static string DefaultDirectory()
-    {
-        string path = "";
-        var fileManager = NSFileManager.DefaultManager;
-
-        var paths = NSSearchPath.GetDirectories(NSSearchPathDirectory.DocumentDirectory, NSSearchPathDomain.User, true);
-        path = Path.Combine(paths[0], "Logs");
-
         if (!System.IO.Directory.Exists(path))
         {
             try
             {
                 System.IO.Directory.CreateDirectory(path);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Couldn't create directory at {path}: {ex.Message}");
+            }
         }
-
-        return path;
     }
+
+    private static string DefaultDirectory()
+    {
+#pragma warning disable CA1416 // Validate platform compatibility
+        var paths = NSSearchPath.GetDirectories(NSSearchPathDirectory.DocumentDirectory, NSSearchPathDomain.User, true);
+#pragma warning restore CA1416 // Validate platform compatibility
+        var logPath = Path.Combine(paths[0], "Logs");
+        
+        EnsureDirectoryExists(logPath);
+        
+        return logPath;
+    }
+    
+    #endregion
 }
 
+/// <summary>
+/// Static helper class for easier logging
+/// </summary>
 public static class LoggerHelper
 {
+    /// <summary>
+    /// Writes a log entry using the singleton logger instance
+    /// </summary>
+    /// <param name="text">The log message to write</param>
     public static void Log(string text)
     {
         HSLogger.Logger.Write(text);
