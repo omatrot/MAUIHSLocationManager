@@ -9,7 +9,7 @@ using UIKit;
 public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
 {
     #region Properties
-    
+
     public ulong MaxFileSize { get; set; } = 2048;
     public int MaxFileCount { get; set; } = 8;
     public string Name { get; set; } = "logfile";
@@ -20,7 +20,7 @@ public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
 
     private string _directory = DefaultDirectory();
     private readonly NSDateFormatter _dateFormatter;
-    
+
     public string Directory
     {
         get => _directory;
@@ -32,11 +32,11 @@ public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
     }
 
     public string CurrentPath => Path.Combine(Directory, GetLogName(0));
-    
+
     #endregion
 
     #region Constructor
-    
+
     private HSLogger()
     {
 #pragma warning disable CA1416 // Validate platform compatibility
@@ -47,11 +47,11 @@ public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
         };
 #pragma warning restore CA1416 // Validate platform compatibility
     }
-    
+
     #endregion
 
     #region Public Methods
-    
+
     /// <summary>
     /// Exports the current log file using iOS document interaction controller
     /// </summary>
@@ -78,7 +78,7 @@ public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
         try
         {
             EnsureLogFileExists();
-            
+
             using var fileStream = new FileStream(CurrentPath, FileMode.Append, FileAccess.Write);
             using var writer = new StreamWriter(fileStream);
 
@@ -86,7 +86,7 @@ public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
             var dateStr = _dateFormatter.ToString(NSDate.Now);
 #pragma warning restore CA1416 // Validate platform compatibility
             var logEntry = $"[{dateStr}]: {text}\n";
-            
+
             writer.Write(logEntry);
 
             if (PrintToConsole)
@@ -101,26 +101,26 @@ public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
             Console.WriteLine($"Error writing to log: {ex.Message}");
         }
     }
-    
+
     #endregion
 
     #region IUIDocumentInteractionControllerDelegate Implementation
-    
-    public static UIViewController? DocumentInteractionControllerViewControllerForPreview(UIDocumentInteractionController controller)
-    {
-#pragma warning disable CA1416 // Validate platform compatibility
-        var windowScene = UIApplication.SharedApplication.ConnectedScenes
-            .OfType<UIWindowScene>()
-            .FirstOrDefault();
 
-        return windowScene?.Windows.FirstOrDefault(static w => w.IsKeyWindow)?.RootViewController;
-#pragma warning restore CA1416 // Validate platform compatibility
+    [Export("documentInteractionControllerViewControllerForPreview:")]
+    public UIViewController ViewControllerForPreview(UIDocumentInteractionController controller)
+    {
+        // Get the current key window's root view controller
+#pragma warning disable CA1422 // Valider la compatibilité de la plateforme
+        var window = UIApplication.SharedApplication.KeyWindow
+            ?? UIApplication.SharedApplication.Windows.FirstOrDefault(w => w.IsKeyWindow);
+#pragma warning restore CA1422 // Valider la compatibilité de la plateforme
+
+        return window?.RootViewController;
     }
-    
     #endregion
 
     #region Private Methods
-    
+
     private void EnsureLogFileExists()
     {
         if (!File.Exists(CurrentPath))
@@ -157,19 +157,19 @@ public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
             {
                 File.Delete(deletePath);
             }
-            
+
             // Rotate files from highest index to lowest
             for (int i = MaxFileCount - 1; i >= 0; i--)
             {
                 var currentFile = Path.Combine(Directory, GetLogName(i));
                 var nextFile = Path.Combine(Directory, GetLogName(i + 1));
-                
+
                 if (File.Exists(currentFile))
                 {
                     File.Move(currentFile, nextFile, true);
                 }
             }
-            
+
             // Create a new empty log file
             File.WriteAllText(CurrentPath, string.Empty);
         }
@@ -207,12 +207,12 @@ public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
         var paths = NSSearchPath.GetDirectories(NSSearchPathDirectory.DocumentDirectory, NSSearchPathDomain.User, true);
 #pragma warning restore CA1416 // Validate platform compatibility
         var logPath = Path.Combine(paths[0], "Logs");
-        
+
         EnsureDirectoryExists(logPath);
-        
+
         return logPath;
     }
-    
+
     #endregion
 }
 

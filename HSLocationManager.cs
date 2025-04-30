@@ -1,180 +1,245 @@
-namespace HSLocationManager;
-public interface IHSLocationManagerDelegate
+using CoreLocation;
+using Foundation;
+using UIKit;
+
+namespace HSLocationManager
 {
-    void ScheduledLocationManagerDidFailWithError(HSLocationManager manager, Exception error);
-    void ScheduledLocationManagerDidUpdateLocations(HSLocationManager manager, IEnumerable<Location> locations);
-    void ScheduledLocationManagerDidChangeAuthorization(HSLocationManager manager, PermissionStatus status);
-}
-
-public class HSLocationManager : IDisposable
-{
-    private readonly TimeSpan MaxBGTime = TimeSpan.FromSeconds(170);
-    private readonly TimeSpan MinBGTime = TimeSpan.FromSeconds(2);
-    private const double MinAcceptableLocationAccuracy = 5;
-    private readonly TimeSpan WaitForLocationsTime = TimeSpan.FromSeconds(3);
-
-    private readonly IHSLocationManagerDelegate _delegate;
-    private bool _isManagerRunning;
-    private Timer? _checkLocationTimer;
-    private Timer? _waitTimer;
-    private readonly List<Location> _lastLocations = [];
-    private GeolocationRequest? _currentRequest;
-
-    public double AcceptableLocationAccuracy { get; private set; } = 100;
-    public TimeSpan CheckLocationInterval { get; private set; } = TimeSpan.FromSeconds(10);
-    public bool IsRunning { get; private set; }
-
-    public HSLocationManager(IHSLocationManagerDelegate delegateImpl)
+    public interface IHSLocationManagerDelegate
     {
-        _delegate = delegateImpl;
-        ConfigureLifecycleHandlers();
+        void ScheduledLocationManager(HSLocationManager manager, NSError error);
+        void ScheduledLocationManager(HSLocationManager manager, CLLocation[] locations);
+        void ScheduledLocationManager(HSLocationManager manager, CLAuthorizationStatus status);
     }
 
-    private void ConfigureLifecycleHandlers()
+    public class HSLocationManager : CLLocationManagerDelegate, IDisposable
     {
-        // Platform-specific lifecycle handling needed here
-        // Subscribe to app background/foreground events using platform-specific code
-    }
+        #region Constants
+        private const double MaxBGTime = 170;
+        private const double MinBGTime = 2;
+        private const double MinAcceptableLocationAccuracy = 5;
+        private const double WaitForLocationsTime = 3;
+        #endregion
 
-    public async Task RequestAlwaysAuthorizationAsync()
-    {
-        var status = await Permissions.CheckStatusAsync<Permissions.LocationAlways>();
-        if (status != PermissionStatus.Granted)
+        #region Fields
+        private readonly IHSLocationManagerDelegate _delegate;
+        private readonly CLLocationManager _manager;
+        private NSTimer? _checkLocationTimer;
+        private NSTimer? _waitTimer;
+        private nint _bgTask = UIApplication.BackgroundTaskInvalid;
+        private List<CLLocation> _lastLocations = [];
+        private bool _isManagerRunning;
+        #endregion
+
+        #region Properties
+        public double AcceptableLocationAccuracy { get; private set; } = 100;
+        public double CheckLocationInterval { get; private set; } = 10;
+        public bool IsRunning { get; private set; }
+        #endregion
+
+        public HSLocationManager(IHSLocationManagerDelegate delegateImpl)
         {
-            status = await Permissions.RequestAsync<Permissions.LocationAlways>();
-        }
-        _delegate.ScheduledLocationManagerDidChangeAuthorization(this, status);
-    }
-
-    public void StartUpdatingLocation(TimeSpan interval, double acceptableLocationAccuracy = 100)
-    {
-        if (IsRunning) StopUpdatingLocation();
-
-        CheckLocationInterval = interval switch
-        {
-            _ when interval > MaxBGTime => MaxBGTime,
-            _ when interval < MinBGTime => MinBGTime,
-            _ => interval
-        } - WaitForLocationsTime;
-
-        AcceptableLocationAccuracy = Math.Max(acceptableLocationAccuracy, MinAcceptableLocationAccuracy);
-        IsRunning = true;
-
-        StartLocationManager();
-    }
-
-    private CancellationTokenSource? _listenTokenSource;
-
-    private async void StartLocationManager()
-    {
-        if (_isManagerRunning) return;
-
-        _isManagerRunning = true;
-
-        try
-        {
-            var request = new GeolocationListeningRequest(
-                GeolocationAccuracy.Best,
-                TimeSpan.FromSeconds(1));
-
-            _listenTokenSource?.Cancel();
-            _listenTokenSource = new CancellationTokenSource();
-
-            Geolocation.LocationChanged += HandleLocationChanged;
-
-            // This is the correct MAUI listening method
-            var success = await Geolocation.StartListeningForegroundAsync(request);
-
-            if (!success)
+            _delegate = delegateImpl;
+            _manager = new CLLocationManager
             {
-                _delegate.ScheduledLocationManagerDidFailWithError(
-                    this, new Exception("Failed to start location listening"));
+                Delegate = this,
+                AllowsBackgroundLocationUpdates = true,
+                PausesLocationUpdatesAutomatically = false
+            };
+        }
+
+        public void RequestAlwaysAuthorization() => _manager.RequestAlwaysAuthorization();
+
+        public void StartUpdatingLocation(double interval, double acceptableLocationAccuracy = 100)
+        {
+            if (IsRunning) StopUpdatingLocation();
+
+            CheckLocationInterval = Math.Max(MinBGTime, Math.Min(MaxBGTime, interval)) - WaitForLocationsTime;
+            AcceptableLocationAccuracy = Math.Max(MinAcceptableLocationAccuracy, acceptableLocationAccuracy);
+
+            IsRunning = true;
+            AddNotifications();
+            StartLocationManager();
+        }
+
+        public void StopUpdatingLocation()
+        {
+            IsRunning = false;
+            StopWaitTimer();
+            StopLocationManager();
+            StopBackgroundTask();
+            StopCheckLocationTimer();
+            RemoveNotifications();
+        }
+
+        #region Location Manager
+        private void StartLocationManager()
+        {
+            _isManagerRunning = true;
+
+            // Use the raw double value
+            _manager.DesiredAccuracy = -2.0; // BestForNavigation
+            _manager.DistanceFilter = 5; // Meters
+            _manager.StartUpdatingLocation();
+        }
+
+        private void PauseLocationManager()
+        {
+            _manager.DesiredAccuracy = 3000.0; // Three kilometers
+            _manager.DistanceFilter = 99999;
+        }
+
+        private void StopLocationManager()
+        {
+            _isManagerRunning = false;
+            _manager.StopUpdatingLocation();
+        }
+        #endregion
+
+        #region Event Handlers
+        public override void AuthorizationChanged(CLLocationManager manager, CLAuthorizationStatus status)
+        {
+            _delegate.ScheduledLocationManager(this, status);
+        }
+
+        public override void Failed(CLLocationManager manager, NSError error)
+        {
+            _delegate.ScheduledLocationManager(this, error);
+        }
+
+        public override void LocationsUpdated(CLLocationManager manager, CLLocation[] locations)
+        {
+            if (!_isManagerRunning || locations.Length == 0) return;
+
+            _lastLocations = locations.ToList();
+            if (_waitTimer == null) StartWaitTimer();
+        }
+        #endregion
+
+        #region Timer Methods
+        private void StartCheckLocationTimer()
+        {
+            StopCheckLocationTimer();
+            _checkLocationTimer = NSTimer.CreateScheduledTimer(CheckLocationInterval, false, _ => CheckLocationTimerEvent());
+        }
+
+        private void StopCheckLocationTimer()
+        {
+            _checkLocationTimer?.Invalidate();
+            _checkLocationTimer?.Dispose();
+            _checkLocationTimer = null;
+        }
+
+        private void StartWaitTimer()
+        {
+            StopWaitTimer();
+            _waitTimer = NSTimer.CreateScheduledTimer(WaitForLocationsTime, false, _ => WaitTimerEvent());
+        }
+
+        private void StopWaitTimer()
+        {
+            _waitTimer?.Invalidate();
+            _waitTimer?.Dispose();
+            _waitTimer = null;
+        }
+
+        private void CheckLocationTimerEvent()
+        {
+            StopCheckLocationTimer();
+            StartLocationManager();
+            NSTimer.CreateScheduledTimer(1, false, _ => StopAndResetBgTaskIfNeeded());
+        }
+
+        private void WaitTimerEvent()
+        {
+            StopWaitTimer();
+
+            if (AcceptableLocationAccuracyRetrieved())
+            {
+                StartBackgroundTask();
+                StartCheckLocationTimer();
+                PauseLocationManager();
+                _delegate.ScheduledLocationManager(this, _lastLocations.ToArray());
+            }
+            else
+            {
+                StartWaitTimer();
             }
         }
-        catch (Exception ex)
+
+        private bool AcceptableLocationAccuracyRetrieved()
         {
-            _delegate.ScheduledLocationManagerDidFailWithError(this, ex);
+            return _lastLocations.LastOrDefault()?.HorizontalAccuracy <= AcceptableLocationAccuracy;
         }
-    }
+        #endregion
 
-    private void PauseLocationManager()
-    {
-        _isManagerRunning = false;
-        _listenTokenSource?.Cancel();
-        Geolocation.LocationChanged -= HandleLocationChanged;
-    }
-    private void HandleLocationChanged(object? sender, GeolocationLocationChangedEventArgs e)
-    {
-        if (!_isManagerRunning) return;
-
-        _lastLocations.Add(e.Location);
-        if (_waitTimer == null) StartWaitTimer();
-    }
-
-    private void StartWaitTimer()
-    {
-        _waitTimer?.Dispose();
-        _waitTimer = new Timer(_ => WaitTimerElapsed(), null, WaitForLocationsTime, Timeout.InfiniteTimeSpan);
-    }
-
-    private void WaitTimerElapsed()
-    {
-        var acceptableLocationFound = _lastLocations.Exists(l => l.Accuracy.HasValue &&
-                                                               l.Accuracy <= AcceptableLocationAccuracy);
-
-        if (acceptableLocationFound)
+        #region Background Task
+        private void StartBackgroundTask()
         {
-            NotifyDelegateAndPause();
+            var state = UIApplication.SharedApplication.ApplicationState;
+            if ((state == UIApplicationState.Background || state == UIApplicationState.Inactive) &&
+                _bgTask == UIApplication.BackgroundTaskInvalid)
+            {
+                _bgTask = UIApplication.SharedApplication.BeginBackgroundTask(() => CheckLocationTimerEvent());
+            }
         }
-        else
+
+        private void StopBackgroundTask()
         {
-            StartWaitTimer();
+            if (_bgTask == UIApplication.BackgroundTaskInvalid) return;
+            UIApplication.SharedApplication.EndBackgroundTask(_bgTask);
+            _bgTask = UIApplication.BackgroundTaskInvalid;
         }
-    }
 
-    private void NotifyDelegateAndPause()
-    {
-        _delegate.ScheduledLocationManagerDidUpdateLocations(this, _lastLocations);
-        _lastLocations.Clear();
-        PauseLocationManager();
-        StartCheckLocationTimer();
-    }
+        private void StopAndResetBgTaskIfNeeded()
+        {
+            if (_isManagerRunning)
+            {
+                StopBackgroundTask();
+            }
+            else
+            {
+                StopBackgroundTask();
+                StartBackgroundTask();
+            }
+        }
+        #endregion
 
-    private void StartCheckLocationTimer()
-    {
-        _checkLocationTimer?.Dispose();
-        _checkLocationTimer = new Timer(_ => CheckLocationTimerElapsed(), null, CheckLocationInterval, Timeout.InfiniteTimeSpan);
-    }
+        #region Application State
+        private void AddNotifications()
+        {
+            RemoveNotifications();
+            NSNotificationCenter.DefaultCenter.AddObserver(
+                UIApplication.DidEnterBackgroundNotification,
+                ApplicationDidEnterBackground);
+            NSNotificationCenter.DefaultCenter.AddObserver(
+                UIApplication.DidBecomeActiveNotification,
+                ApplicationDidBecomeActive);
+        }
 
-    private void CheckLocationTimerElapsed()
-    {
-        StartLocationManager();
-    }
+        private void RemoveNotifications()
+        {
+            NSNotificationCenter.DefaultCenter.RemoveObserver(this);
+        }
 
-    public void StopUpdatingLocation()
-    {
-        IsRunning = false;
-        _waitTimer?.Dispose();
-        _checkLocationTimer?.Dispose();
-        PauseLocationManager();
-    }
+        [Export("applicationDidEnterBackground")]
+        private void ApplicationDidEnterBackground(NSNotification notification)
+        {
+            StopBackgroundTask();
+            StartBackgroundTask();
+        }
 
-    public void Dispose()
-    {
-        StopUpdatingLocation();
-        _waitTimer?.Dispose();
-        _checkLocationTimer?.Dispose();
-        GC.SuppressFinalize(this);
-    }
+        [Export("applicationDidBecomeActive")]
+        private void ApplicationDidBecomeActive(NSNotification notification)
+        {
+            StopBackgroundTask();
+        }
+        #endregion
 
-    // Platform-specific background task methods would go here
-    private void StartBackgroundTask()
-    {
-        // Implement using platform-specific code
-    }
-
-    private void StopBackgroundTask()
-    {
-        // Implement using platform-specific code
+        public new void Dispose()
+        {
+            StopUpdatingLocation();
+            _manager?.Dispose();
+            GC.SuppressFinalize(this);
+        }
     }
 }

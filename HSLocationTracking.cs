@@ -2,6 +2,8 @@ namespace HSLocationManager;
 
 using System;
 using System.Diagnostics;
+using CoreLocation;
+using Foundation;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Maui.Devices.Sensors;
 
@@ -10,7 +12,7 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
     // Constants
     public const int TimeInterval = 30;
     public const double Accuracy = 200;
-    
+
     private static HSLocationTracking? _instance;
     private readonly HSLocationManager _manager;
     private bool _statusCheckedOnce;
@@ -42,10 +44,10 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
     public async void StartLocationTracking()
     {
         var status = await CheckLocationPermission();
-        
+
         if (status == PermissionStatus.Granted)
         {
-            _manager.StartUpdatingLocation(TimeSpan.FromSeconds(TimeInterval), Accuracy);
+            _manager.StartUpdatingLocation(TimeSpan.FromSeconds(TimeInterval).TotalSeconds, Accuracy);
         }
         else if (status == PermissionStatus.Denied)
         {
@@ -53,7 +55,7 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
         }
         else
         {
-            await _manager.RequestAlwaysAuthorizationAsync();
+            _manager.RequestAlwaysAuthorization();
         }
     }
 
@@ -67,36 +69,70 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
         var status = await Permissions.CheckStatusAsync<Permissions.LocationWhenInUse>();
         if (status == PermissionStatus.Granted)
             return PermissionStatus.Granted;
-        
+
         return await Permissions.CheckStatusAsync<Permissions.LocationAlways>();
     }
 
     #region IHSLocationManagerDelegate Implementation
-    
-    public void ScheduledLocationManagerDidUpdateLocations(HSLocationManager manager, IEnumerable<Location> locations)
+
+    public void ScheduledLocationManager(HSLocationManager manager, NSError error)
     {
+        if (error != null)
+        {
+            Debug.WriteLine($"Location Error: {error.LocalizedDescription}");
+            return;
+        }
+
+        if (!_statusCheckedOnce)
+        {
+            _statusCheckedOnce = true;
+            var status = Task.Run(() => CheckLocationPermission()).GetAwaiter().GetResult();
+            if (status == PermissionStatus.Denied)
+            {
+                ShowLocationAlert();
+            }
+        }
+    }
+
+    public void ScheduledLocationManager(HSLocationManager manager, CLLocation[] locations)
+    {
+        if (locations.Length == 0) return;
+
         var recentLocation = locations.LastOrDefault();
         Debug.WriteLine($"Location retrieved successfully: {recentLocation?.ToString() ?? "No location"}");
-        
+
         // Add your location handling logic here
     }
 
-    public void ScheduledLocationManagerDidFailWithError(HSLocationManager manager, Exception error)
+    public void ScheduledLocationManager(HSLocationManager manager, CLAuthorizationStatus status)
     {
-        Debug.WriteLine($"Location Error: {error.Message}");
-    }
-
-    public void ScheduledLocationManagerDidChangeAuthorization(HSLocationManager manager, PermissionStatus status)
-    {
-        if (status == PermissionStatus.Denied)
+        if (status == CLAuthorizationStatus.Denied)
         {
             Debug.WriteLine("Location service is disabled...");
         }
-        else
+        else if (status == CLAuthorizationStatus.AuthorizedAlways || status == CLAuthorizationStatus.AuthorizedWhenInUse)
         {
             StartLocationTracking();
         }
+        else if (status == CLAuthorizationStatus.NotDetermined)
+        {
+            Debug.WriteLine("Location permission not determined yet.");
+        }
+        else if (status == CLAuthorizationStatus.Restricted)
+        {
+            Debug.WriteLine("Location permission is restricted.");
+        }
+        else if (status == CLAuthorizationStatus.Authorized)
+        {
+            Debug.WriteLine("Location permission granted.");
+            StartLocationTracking();
+        }
+        else
+        {
+            Debug.WriteLine("Unknown location permission status.");
+        }
     }
+
     #endregion
 
     public void Dispose()
