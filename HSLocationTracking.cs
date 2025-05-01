@@ -1,17 +1,15 @@
 namespace HSLocationManager;
 
 using System;
-using System.Diagnostics;
 using CoreLocation;
 using Foundation;
 using Microsoft.Maui.ApplicationModel;
-using Microsoft.Maui.Devices.Sensors;
 
 public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
 {
     // Constants
-    public const int TimeInterval = 30;
-    public const double Accuracy = 200;
+    private const int TimeInterval = 30;
+    private const double Accuracy = 200;
 
     private static HSLocationTracking? _instance;
     private readonly HSLocationManager _manager;
