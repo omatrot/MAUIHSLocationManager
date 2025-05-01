@@ -40,7 +40,7 @@ Now, Add location folder into your project.
     
 # Start Location tracking:
 
-    HSLocationTracking.shared().startLocationTracking()
+    HSLocationTracking.Instance.StartLocationTracking()
     
 **This method is called in every 30 sec if location is available with specified accuracy(private const int TimeInterval = 30;)**
 
