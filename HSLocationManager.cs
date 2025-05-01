@@ -116,7 +116,7 @@ namespace HSLocationManager
         {
             if (!_isManagerRunning || locations.Length == 0) return;
 
-            _lastLocations = locations.ToList();
+            _lastLocations = [.. locations];
             if (_waitTimer == null) StartWaitTimer();
         }
         #endregion

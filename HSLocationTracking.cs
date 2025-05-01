@@ -30,7 +30,7 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
 
     public bool IsLocationServiceEnabled()
     {
-        return CheckLocationPermission().Result == PermissionStatus.Granted;
+        return CheckLocationPermissionAsync().Result == PermissionStatus.Granted;
     }
 
     public void ShowLocationAlert()
@@ -39,9 +39,9 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
         // Implement platform-specific location enablement prompt if needed
     }
 
-    public async void StartLocationTracking()
+    public async Task StartLocationTrackingAsync()
     {
-        var status = await CheckLocationPermission();
+        var status = await CheckLocationPermissionAsync();
 
         if (status == PermissionStatus.Granted)
         {
@@ -62,7 +62,7 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
         _manager.StopUpdatingLocation();
     }
 
-    private async Task<PermissionStatus> CheckLocationPermission()
+    private async Task<PermissionStatus> CheckLocationPermissionAsync()
     {
         var status = await Permissions.CheckStatusAsync<Permissions.LocationWhenInUse>();
         if (status == PermissionStatus.Granted)
@@ -84,7 +84,7 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
         if (!_statusCheckedOnce)
         {
             _statusCheckedOnce = true;
-            var status = Task.Run(() => CheckLocationPermission()).GetAwaiter().GetResult();
+            var status = Task.Run(() => CheckLocationPermissionAsync()).GetAwaiter().GetResult();
             if (status == PermissionStatus.Denied)
             {
                 ShowLocationAlert();
@@ -110,7 +110,7 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
         }
         else if (status == CLAuthorizationStatus.AuthorizedAlways || status == CLAuthorizationStatus.AuthorizedWhenInUse)
         {
-            StartLocationTracking();
+            StartLocationTrackingAsync();
         }
         else if (status == CLAuthorizationStatus.NotDetermined)
         {
@@ -123,7 +123,7 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
         else if (status == CLAuthorizationStatus.Authorized)
         {
             HSLogger.Logger.Write("Location permission granted.");
-            StartLocationTracking();
+            StartLocationTrackingAsync();
         }
         else
         {

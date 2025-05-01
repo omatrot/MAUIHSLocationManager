@@ -55,13 +55,13 @@ public class MainPage : ContentPage
         HSLogger.Logger.ExportLogFile();
     }
 
-    private void OnTrackingToggled(object? sender, EventArgs e)
+    private async void OnTrackingToggled(object? sender, EventArgs e)
     {
         _isTracking = !_isTracking;
 
         if (_isTracking)
         {
-            HSLocationTracking.Instance.StartLocationTracking();
+            await HSLocationTracking.Instance.StartLocationTrackingAsync();
             _trackingButton.Text = "Stop Tracking";
             _trackingButton.BackgroundColor = Colors.Red;
         }
