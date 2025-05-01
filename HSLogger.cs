@@ -80,7 +80,7 @@ public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
             EnsureLogFileExists();
 
             using var fileStream = new FileStream(CurrentPath, FileMode.Append, FileAccess.Write);
-            using var writer = new StreamWriter(fileStream);
+            using var writer = new StreamWriter(fileStream, System.Text.Encoding.UTF8);
 
 #pragma warning disable CA1416 // Validate platform compatibility
             var dateStr = _dateFormatter.ToString(NSDate.Now);
@@ -112,10 +112,10 @@ public class HSLogger : NSObject, IUIDocumentInteractionControllerDelegate
         // Get the current key window's root view controller
 #pragma warning disable CA1422 // Valider la compatibilité de la plateforme
         var window = UIApplication.SharedApplication.KeyWindow
-            ?? UIApplication.SharedApplication.Windows.FirstOrDefault(w => w.IsKeyWindow);
+            ?? UIApplication.SharedApplication.Windows.First(w => w.IsKeyWindow);
 #pragma warning restore CA1422 // Valider la compatibilité de la plateforme
 
-        return window?.RootViewController;
+        return window.RootViewController!;
     }
     #endregion
 

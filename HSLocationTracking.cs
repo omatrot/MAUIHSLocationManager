@@ -37,7 +37,7 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
 
     public void ShowLocationAlert()
     {
-        Debug.WriteLine("Please enable location service");
+        HSLogger.Logger.Write("Please enable location service");
         // Implement platform-specific location enablement prompt if needed
     }
 
@@ -51,7 +51,7 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
         }
         else if (status == PermissionStatus.Denied)
         {
-            Debug.WriteLine("Location service is disabled");
+            HSLogger.Logger.Write("Location service is disabled");
         }
         else
         {
@@ -79,7 +79,7 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
     {
         if (error != null)
         {
-            Debug.WriteLine($"Location Error: {error.LocalizedDescription}");
+            HSLogger.Logger.Write($"Location Error: {error.LocalizedDescription}");
             return;
         }
 
@@ -99,7 +99,7 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
         if (locations.Length == 0) return;
 
         var recentLocation = locations.LastOrDefault();
-        Debug.WriteLine($"Location retrieved successfully: {recentLocation?.ToString() ?? "No location"}");
+        HSLogger.Logger.Write($"Location retrieved successfully: {recentLocation?.ToString() ?? "No location"}");
 
         // Add your location handling logic here
     }
@@ -108,7 +108,7 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
     {
         if (status == CLAuthorizationStatus.Denied)
         {
-            Debug.WriteLine("Location service is disabled...");
+            HSLogger.Logger.Write("Location service is disabled...");
         }
         else if (status == CLAuthorizationStatus.AuthorizedAlways || status == CLAuthorizationStatus.AuthorizedWhenInUse)
         {
@@ -116,20 +116,20 @@ public class HSLocationTracking : IHSLocationManagerDelegate, IDisposable
         }
         else if (status == CLAuthorizationStatus.NotDetermined)
         {
-            Debug.WriteLine("Location permission not determined yet.");
+            HSLogger.Logger.Write("Location permission not determined yet.");
         }
         else if (status == CLAuthorizationStatus.Restricted)
         {
-            Debug.WriteLine("Location permission is restricted.");
+            HSLogger.Logger.Write("Location permission is restricted.");
         }
         else if (status == CLAuthorizationStatus.Authorized)
         {
-            Debug.WriteLine("Location permission granted.");
+            HSLogger.Logger.Write("Location permission granted.");
             StartLocationTracking();
         }
         else
         {
-            Debug.WriteLine("Unknown location permission status.");
+            HSLogger.Logger.Write("Unknown location permission status.");
         }
     }
 

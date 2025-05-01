@@ -80,18 +80,24 @@ namespace HSLocationManager
             _manager.DesiredAccuracy = -2.0; // BestForNavigation
             _manager.DistanceFilter = 5; // Meters
             _manager.StartUpdatingLocation();
+
+            HSLogger.Logger.Write($"Location manager started with accuracy: {AcceptableLocationAccuracy} meters");
         }
 
         private void PauseLocationManager()
         {
             _manager.DesiredAccuracy = 3000.0; // Three kilometers
             _manager.DistanceFilter = 99999;
+
+            HSLogger.Logger.Write("Location manager paused");
         }
 
         private void StopLocationManager()
         {
             _isManagerRunning = false;
             _manager.StopUpdatingLocation();
+
+            HSLogger.Logger.Write("Location manager stopped");
         }
         #endregion
 
@@ -158,7 +164,7 @@ namespace HSLocationManager
                 StartBackgroundTask();
                 StartCheckLocationTimer();
                 PauseLocationManager();
-                _delegate.ScheduledLocationManager(this, _lastLocations.ToArray());
+                _delegate.ScheduledLocationManager(this, [.. _lastLocations]);
             }
             else
             {
@@ -168,7 +174,8 @@ namespace HSLocationManager
 
         private bool AcceptableLocationAccuracyRetrieved()
         {
-            return _lastLocations.LastOrDefault()?.HorizontalAccuracy <= AcceptableLocationAccuracy;
+            bool acceptable = _lastLocations.LastOrDefault()?.HorizontalAccuracy <= AcceptableLocationAccuracy;
+            return acceptable;
         }
         #endregion
 
@@ -210,10 +217,10 @@ namespace HSLocationManager
             RemoveNotifications();
             NSNotificationCenter.DefaultCenter.AddObserver(
                 UIApplication.DidEnterBackgroundNotification,
-                ApplicationDidEnterBackground);
+                notification => ApplicationDidEnterBackground());
             NSNotificationCenter.DefaultCenter.AddObserver(
                 UIApplication.DidBecomeActiveNotification,
-                ApplicationDidBecomeActive);
+                notification => ApplicationDidBecomeActive());
         }
 
         private void RemoveNotifications()
@@ -222,15 +229,18 @@ namespace HSLocationManager
         }
 
         [Export("applicationDidEnterBackground")]
-        private void ApplicationDidEnterBackground(NSNotification notification)
+        private void ApplicationDidEnterBackground()
         {
+            HSLogger.Logger.Write("Application entered background state");
             StopBackgroundTask();
             StartBackgroundTask();
         }
 
         [Export("applicationDidBecomeActive")]
-        private void ApplicationDidBecomeActive(NSNotification notification)
+        private void ApplicationDidBecomeActive()
         {
+            HSLogger.Logger.Write("Application became active");
+
             StopBackgroundTask();
         }
         #endregion
